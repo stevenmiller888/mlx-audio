@@ -2,6 +2,7 @@
 //  Kokoro-tts-lib
 //
 import Foundation
+import MLX
 
 // Utility class for tokenizing the phonemized text
 final class PhonemeTokenizer {
@@ -15,8 +16,15 @@ final class PhonemeTokenizer {
       .filter { $0 != nil }
       .map { $0! }
   }
+  
+  // Generate silence audio for a specific duration in seconds
+  static func generateSilenceAudio(duration: Float, sampleRate: Int = 24000) -> MLXArray {
+    let numSamples = Int(duration * Float(sampleRate))
+    let silenceData = [Float](repeating: 0.0, count: numSamples)
+    return MLXArray(silenceData)
+  }
 
-  private enum Constants {
+  enum Constants {
     static let vocab: [String: Int] = [
       ";": 1, ":": 2, ",": 3, ".": 4, "!": 5, "?": 6, "—": 9, "…": 10, "\"": 11, "(": 12,
       ")": 13, "“": 14, "”": 15, " ": 16, "\u{0303}": 17, "ʣ": 18, "ʥ": 19, "ʦ": 20,

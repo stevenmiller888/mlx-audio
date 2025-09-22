@@ -79,6 +79,10 @@ final class KokoroTokenizer {
         pattern: #"\[([^\]]+)\]\(([^\)]*)\)"#
     )
 
+    private static let pauseRegex = try! NSRegularExpression(
+        pattern: #"\[pause:(\d+(?:\.\d+)?)s\]"#
+    )
+
     private static let alphabeticRegex = try! NSRegularExpression(
         pattern: #"^[a-zA-Z]+$"#
     )
@@ -230,6 +234,8 @@ final class KokoroTokenizer {
             withTemplate: "$1 to $2"
         )
 
+        // Note: Pause syntax [pause:Xs] will be handled at the audio generation level
+
         // Process currencies, times, and decimals
         processedText = flipMoney(processedText)
         processedText = splitNum(processedText)
@@ -305,6 +311,7 @@ final class KokoroTokenizer {
     }
 
     // MARK: - Text Processing Utilities
+
 
     private func removeCommasFromNumbers(_ text: String) -> String {
         return Self.commaInNumberRegex.stringByReplacingMatches(

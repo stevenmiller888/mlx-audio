@@ -517,21 +517,23 @@ public class KokoroTTS {
   public func generateAudio(voice: TTSVoice, text: String, speed: Float = 1.0, chunkCallback: @escaping AudioChunkCallback) throws {
     try ensureModelInitialized()
 
-    let sentences = SentenceTokenizer.splitIntoSentences(text: text)
-    if sentences.isEmpty {
+    // Parse text and extract pause information
+    let segments = parsePauseSyntax(text)
+    
+    if segments.isEmpty {
       throw KokoroTTSError.sentenceSplitError
     }
 
-    // Process each sentence in sequence with better performance
+    // Process each segment in sequence with better performance
     DispatchQueue.global(qos: .userInitiated).async {
       self.voice = nil
 
-      // Use a separate autorelease pool for each sentence to release memory faster
-      for (_, sentence) in sentences.enumerated() {
+      // Use a separate autorelease pool for each segment to release memory faster
+      for segment in segments {
         autoreleasepool {
           do {
-            // Generate audio for this sentence
-            let audio = try self.generateAudioForSentence(voice: voice, text: sentence, speed: speed)
+            // Generate audio for this text segment
+            let audio = try self.generateAudioForSentence(voice: voice, text: segment.text, speed: speed)
 
             // Force evaluation to ensure tensor is computed before sending
             audio.eval()
@@ -540,6 +542,16 @@ public class KokoroTTS {
             // Dispatch to main thread to avoid threading issues with UI updates
             DispatchQueue.main.async {
               chunkCallback(audio)
+            }
+
+            // Check if we need to inject silence after this segment
+            if let pauseDuration = segment.pauseAfter {
+              let silence = PhonemeTokenizer.generateSilenceAudio(duration: pauseDuration)
+              silence.eval()
+              
+              DispatchQueue.main.async {
+                chunkCallback(silence)
+              }
             }
 
             // Explicitly release large tensors
@@ -554,7 +566,7 @@ public class KokoroTTS {
       }
 
       // Reset model after completing a long text to free memory
-      if sentences.count > 5 {
+      if segments.count > 5 {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
           self.resetModel()
         }
@@ -613,6 +625,53 @@ public class KokoroTTS {
       inputIds: inputIds,
       speed: speed
     )
+  }
+
+  // Parse pause syntax and return text segments with pause durations
+  private func parsePauseSyntax(_ text: String) -> [(text: String, pauseAfter: Float?)] {
+    let pauseRegex = try! NSRegularExpression(pattern: #"\[pause:(\d+(?:\.\d+)?)s\]"#)
+    var segments: [(text: String, pauseAfter: Float?)] = []
+    
+    let matches = pauseRegex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+    
+    if matches.isEmpty {
+      // No pauses found, return the whole text
+      return [(text: text, pauseAfter: nil)]
+    }
+    
+    var lastEndIndex = text.startIndex
+    
+    for match in matches {
+      let matchRange = Range(match.range, in: text)!
+      let matchText = String(text[matchRange])
+      
+      // Extract duration from the match
+      if match.numberOfRanges >= 2 {
+        let durationRange = Range(match.range(at: 1), in: text)!
+        let durationString = String(text[durationRange])
+        
+        if let duration = Float(durationString) {
+          // Get text before this pause
+          let textBeforePause = String(text[lastEndIndex..<text.index(text.startIndex, offsetBy: match.range.location)])
+          
+          if !textBeforePause.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            segments.append((text: textBeforePause, pauseAfter: duration))
+          }
+          
+          lastEndIndex = text.index(text.startIndex, offsetBy: match.range.upperBound)
+        }
+      }
+    }
+    
+    // Add any remaining text after the last pause
+    if lastEndIndex < text.endIndex {
+      let remainingText = String(text[lastEndIndex...])
+      if !remainingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        segments.append((text: remainingText, pauseAfter: nil))
+      }
+    }
+    
+    return segments
   }
 
   struct Constants {

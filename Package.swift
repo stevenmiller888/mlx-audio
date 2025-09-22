@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Swift-TTS",
-    platforms: [.macOS(.v14), .iOS(.v16)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .library(
             name: "mlx-swift-audio",
